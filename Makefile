@@ -4,11 +4,11 @@ CC=gcc
 CFLAGS=-Wall -fpermissive -Wwrite-strings
 CPP=g++
 CPPFLAGS=-Wall -fpermissive -Wwrite-strings
-LDFLAGS=
+LDFLAGS=-lX11
 
 # source files
-SOURCES=main.cpp chip8instruction.cpp
-HEADERS=chip8instruction.h
+SOURCES=main.cpp machine.cpp
+HEADERS=machine.h
 # object files
 OBJECTS=$(SOURCES:.cpp=.o)
 EXECUTABLE=c8emul
