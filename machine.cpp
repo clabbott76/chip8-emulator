@@ -1,7 +1,8 @@
 #include "machine.h"
-#include <string.h> //memset
-#include <stdlib.h> //rand
-#include <unistd.h> //sleep
+#include <string.h> //memset()
+#include <stdlib.h> //rand()
+#include <unistd.h> //sleep()
+#include <time.h> //time() difftime()
 
 // font set
 uint8_t chip8_fontset[80] =
@@ -113,6 +114,10 @@ void Machine::execute(uint8_t* program, int length)
    
    // copy the program into memory
    memcpy(&(memory[pc]), program, length);
+
+   // timer for 60Hz timers
+   clock_t wait_till_end;
+   wait_till_end = clock() + (0.016666667 * CLOCKS_PER_SEC );
    
    while((!kill) && ((pc+1)<MEMORY_SIZE) && (pc != 0))
    {
@@ -122,13 +127,23 @@ void Machine::execute(uint8_t* program, int length)
       // *** decode ***
       decode(opcode, true, false);
       
-      // *** update delay timer ***
-      if(delayTimer > 0)
-         --delayTimer;
+      //
+      //printf("%i < %i\n", clock(), wait_till_end);
+      if (clock() >= wait_till_end)
+      {
+         // *** update delay timer ***
+         if(delayTimer > 0)
+            --delayTimer;
+         
+         // *** update sound timer ***
+         if(soundTimer > 0)
+            --soundTimer;
+         //printf("%i ......\n", ++blah);
+         wait_till_end = clock() + (0.016666667 * CLOCKS_PER_SEC );
+      }
       
-      // *** update sound timer ***
-      if(soundTimer > 0)
-         --soundTimer;
+      // the timers are only updated at 60Hz rate. (16.6 ms period)
+      
       
       // *** update screen ***
       if(drawFlag)
@@ -141,98 +156,113 @@ void Machine::execute(uint8_t* program, int length)
          XSendEvent(d,window,false,ExposureMask,&e);
          XFlush(d);
       }
-      
-      // Wait for X Event or a Timer
-//      if (select(x11_fd+1, &in_fds, 0, 0, &tv))
-//      {
-         //printf("Event Received!\n");
-      
-         while(XPending(d))
+
+      while(XPending(d))
+      {
+         XNextEvent(d, &e);
+         if (e.type == Expose) // need to redraw
          {
-            XNextEvent(d, &e);
-            if (e.type == Expose) // need to redraw
-            {
-//                if(drawFlag)
-//                {
-                  //printf("draw\n");
-                  //XClearWindow(d,window);
-                  for(int x=0; x<SCREEN_WIDTH; x++)
-                     for(int y=0; y<SCREEN_HEIGHT; y++)
-                        if(screen[(y*SCREEN_WIDTH)+x] == 1)
-                           XFillRectangle(d,               // display
-                                          window,          // window
-                                          DefaultGC(d, s), // GC ???
-                                          x*10,              // x
-                                          y*10,              // y
-                                          10,              // width
-                                          10);             // height
-                        else
-                           XClearArea(d,               // display
-                                      window,          // window
-                                      x*10,              // x
-                                      y*10,              // y
-                                      10,              // width
-                                      10,              // height
-                                      false);          //
-                  XFlush(d);
-                  drawFlag = false;
-//                }
-            }
-            
-            for(int i=0; i<16; i++)
-               keys[i]=0;
-            if (e.type == KeyPress) // if key was pressed
-            {
-              //printf("KeyPress: keycode %u state %u\n", e.xkey.keycode, e.xkey.state);
-              switch(e.xkey.keycode)
-              {
-                 case 10: //"1"
-                 case 11: //"2"
-                 case 12: //"3"
-                 case 13: //"4"
-                    keys[e.xkey.keycode-10]=1;
-                    break;
-                 case 24: //"q"
-                 case 25: //"w"
-                 case 26: //"e"
-                 case 27: //"r"
-                    keys[e.xkey.keycode-20]=1;
-                    break;
-                 case 38: //"a"
-                 case 39: //"s"
-                 case 40: //"d"
-                 case 41: //"f"
-                    keys[e.xkey.keycode-30]=1;
-                    break;
-                 case 52: //"z"
-                 case 53: //"x"
-                 case 54: //"c"
-                 case 55: //"v"
-                    keys[e.xkey.keycode-40]=1;
-                    break;
-                 case 9: //"esc"
-                    kill=true;
-                    break;
-              }
-            }
-            //if (e.type == KeyRelease) // if key was released
-            //{
-              //printf("KeyRelease: keycode %u state %u\n", e.xkey.keycode, e.xkey.state);
-            //}
-         } // while(pending)
-//      }
-//      else
-//      {
-         // Handle timer here
-         //printf("Timer Fired!\n");
-//      }
-      
-      // sleep
-      usleep(1000);
+            for(int x=0; x<SCREEN_WIDTH; x++)
+               for(int y=0; y<SCREEN_HEIGHT; y++)
+                  if(screen[(y*SCREEN_WIDTH)+x] == 1)
+                     XFillRectangle(d,               // display
+                                    window,          // window
+                                    DefaultGC(d, s), // GC ???
+                                    x*10,            // x
+                                    y*10,            // y
+                                    10,              // width
+                                    10);             // height
+                  else
+                     XClearArea(d,      // display
+                                window, // window
+                                x*10,   // x
+                                y*10,   // y
+                                10,     // width
+                                10,     // height
+                                false); //
+            XFlush(d);
+            drawFlag = false;
+         }
+         
+         for(int i=0; i<16; i++)
+            keys[i]=0;
+         if (e.type == KeyPress) // if key was pressed
+         {
+           //printf("KeyPress: keycode %u state %u\n", e.xkey.keycode, e.xkey.state);
+           switch(e.xkey.keycode)
+           {
+              case 10: //"1"
+              case 11: //"2"
+              case 12: //"3"
+              case 13: //"4"
+                 keys[e.xkey.keycode-10]=1;
+                 break;
+              case 24: //"q"
+              case 25: //"w"
+              case 26: //"e"
+              case 27: //"r"
+                 keys[e.xkey.keycode-20]=1;
+                 break;
+              case 38: //"a"
+              case 39: //"s"
+              case 40: //"d"
+              case 41: //"f"
+                 keys[e.xkey.keycode-30]=1;
+                 break;
+              case 52: //"z"
+              case 53: //"x"
+              case 54: //"c"
+              case 55: //"v"
+                 keys[e.xkey.keycode-40]=1;
+                 break;
+              case 9: //"esc"
+                 kill=true;
+                 break;
+           }
+         }
+         if (e.type == KeyRelease) // if key was released
+         {
+           //printf("KeyRelease: keycode %u state %u\n", e.xkey.keycode, e.xkey.state);
+           switch(e.xkey.keycode)
+           {
+              case 10: //"1"
+              case 11: //"2"
+              case 12: //"3"
+              case 13: //"4"
+                 keys[e.xkey.keycode-10]=0;
+                 break;
+              case 24: //"q"
+              case 25: //"w"
+              case 26: //"e"
+              case 27: //"r"
+                 keys[e.xkey.keycode-20]=0;
+                 break;
+              case 38: //"a"
+              case 39: //"s"
+              case 40: //"d"
+              case 41: //"f"
+                 keys[e.xkey.keycode-30]=0;
+                 break;
+              case 52: //"z"
+              case 53: //"x"
+              case 54: //"c"
+              case 55: //"v"
+                 keys[e.xkey.keycode-40]=0;
+                 break;
+              case 9: //"esc"
+                 kill=true;
+                 break;
+           }
+         }
+      } // while(pending)
    } // while
    
    // cleanup X11
    XCloseDisplay(d);
+}
+
+void Machine::keyPress()
+{
 }
 
 bool Machine::decode(uint16_t opcode,
@@ -240,6 +270,8 @@ bool Machine::decode(uint16_t opcode,
                      bool decode)
 {
    bool valid = true; // assume true for now
+   
+   printf("opcode 0x%04x\n", opcode);
    
    switch(opcode&0xF000)
    {
@@ -725,12 +757,10 @@ bool Machine::decode(uint16_t opcode,
                      {
                         v[(opcode>>8)&0xF] = waitKey;
                         break;
-                        //pc += 2;
                      }
                   }
                   if(waitKey==16)
-                     pc -= 2;
-                     // do not increment the pc reg
+                     pc -= 2; // do not increment the pc reg
                }
                if(decode)
                {

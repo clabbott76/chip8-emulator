@@ -52,6 +52,8 @@ public:
                bool emulate,
                bool decode);
    
+   void keyPress();
+   
 private:
    // memory
    uint8_t memory[MEMORY_SIZE];
