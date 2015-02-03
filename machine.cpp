@@ -42,7 +42,9 @@ Machine::Machine() :
    soundTimer=0;
    
    // init fonts
-   memcpy(memory, chip8_fontset, 80*sizeof(uint8_t));
+   for(int i=0; i<80; i++)
+      memory[i] = chip8_fontset[i];
+   //memcpy(memory, chip8_fontset, 80*sizeof(uint8_t));
    
    // init graphics
    for(int i=0; i<SCREEN_WIDTH*SCREEN_HEIGHT; i++)
@@ -93,7 +95,7 @@ void Machine::disassemble(uint8_t* program, int length)
    for(int i=0; i<length; i+=2)
    {
       instr = (program[i]<<8) | program[i+1];
-      printf("%04x %04x ", i, instr);
+      printf("%04x %04x ", i+0x200, instr);
       
       if( !decode(instr, false, true) )
       {
@@ -125,10 +127,10 @@ void Machine::execute(uint8_t* program, int length)
       uint16_t opcode = (memory[pc]<<8) | memory[pc+1];
       
       // *** decode ***
+      //printf("0x%X : 0x%X...\n", pc, opcode);
       decode(opcode, true, false);
       
-      //
-      //printf("%i < %i\n", clock(), wait_till_end);
+      // the timers are only updated at 60Hz rate. (16.6 ms period)
       if (clock() >= wait_till_end)
       {
          // *** update delay timer ***
@@ -138,17 +140,13 @@ void Machine::execute(uint8_t* program, int length)
          // *** update sound timer ***
          if(soundTimer > 0)
             --soundTimer;
-         //printf("%i ......\n", ++blah);
+         
          wait_till_end = clock() + (0.016666667 * CLOCKS_PER_SEC );
       }
-      
-      // the timers are only updated at 60Hz rate. (16.6 ms period)
-      
       
       // *** update screen ***
       if(drawFlag)
       {
-         //printf("send event\n");
          XEvent e;
          memset(&e, 0, sizeof(e));
          e.type = Expose;
@@ -159,6 +157,8 @@ void Machine::execute(uint8_t* program, int length)
 
       while(XPending(d))
       {
+         uint8_t keystate = 0;
+         
          XNextEvent(d, &e);
          if (e.type == Expose) // need to redraw
          {
@@ -183,86 +183,47 @@ void Machine::execute(uint8_t* program, int length)
             XFlush(d);
             drawFlag = false;
          }
+         else if(e.type == KeyPress)
+            keystate = 1;
+         else if (e.type == KeyRelease)
+            keystate = 0;
          
-         for(int i=0; i<16; i++)
-            keys[i]=0;
-         if (e.type == KeyPress) // if key was pressed
-         {
-           //printf("KeyPress: keycode %u state %u\n", e.xkey.keycode, e.xkey.state);
-           switch(e.xkey.keycode)
-           {
-              case 10: //"1"
-              case 11: //"2"
-              case 12: //"3"
-              case 13: //"4"
-                 keys[e.xkey.keycode-10]=1;
-                 break;
-              case 24: //"q"
-              case 25: //"w"
-              case 26: //"e"
-              case 27: //"r"
-                 keys[e.xkey.keycode-20]=1;
-                 break;
-              case 38: //"a"
-              case 39: //"s"
-              case 40: //"d"
-              case 41: //"f"
-                 keys[e.xkey.keycode-30]=1;
-                 break;
-              case 52: //"z"
-              case 53: //"x"
-              case 54: //"c"
-              case 55: //"v"
-                 keys[e.xkey.keycode-40]=1;
-                 break;
-              case 9: //"esc"
-                 kill=true;
-                 break;
-           }
-         }
-         if (e.type == KeyRelease) // if key was released
-         {
-           //printf("KeyRelease: keycode %u state %u\n", e.xkey.keycode, e.xkey.state);
-           switch(e.xkey.keycode)
-           {
-              case 10: //"1"
-              case 11: //"2"
-              case 12: //"3"
-              case 13: //"4"
-                 keys[e.xkey.keycode-10]=0;
-                 break;
-              case 24: //"q"
-              case 25: //"w"
-              case 26: //"e"
-              case 27: //"r"
-                 keys[e.xkey.keycode-20]=0;
-                 break;
-              case 38: //"a"
-              case 39: //"s"
-              case 40: //"d"
-              case 41: //"f"
-                 keys[e.xkey.keycode-30]=0;
-                 break;
-              case 52: //"z"
-              case 53: //"x"
-              case 54: //"c"
-              case 55: //"v"
-                 keys[e.xkey.keycode-40]=0;
-                 break;
-              case 9: //"esc"
-                 kill=true;
-                 break;
-           }
-         }
+        //printf("KeyPress: keycode %u state %u\n", e.xkey.keycode, e.xkey.state);
+        switch(e.xkey.keycode)
+        {
+           case 10: //"1"
+           case 11: //"2"
+           case 12: //"3"
+           case 13: //"4"
+              keys[e.xkey.keycode-10] = keystate;
+              break;
+           case 24: //"q"
+           case 25: //"w"
+           case 26: //"e"
+           case 27: //"r"
+              keys[e.xkey.keycode-20] = keystate;
+              break;
+           case 38: //"a"
+           case 39: //"s"
+           case 40: //"d"
+           case 41: //"f"
+              keys[e.xkey.keycode-30] = keystate;
+              break;
+           case 52: //"z"
+           case 53: //"x"
+           case 54: //"c"
+           case 55: //"v"
+              keys[e.xkey.keycode-40] = keystate;
+              break;
+           case 9: //"esc"
+              kill=true;
+              break;
+        }
       } // while(pending)
-   } // while
+    } // while
    
    // cleanup X11
    XCloseDisplay(d);
-}
-
-void Machine::keyPress()
-{
 }
 
 bool Machine::decode(uint16_t opcode,
@@ -271,71 +232,49 @@ bool Machine::decode(uint16_t opcode,
 {
    bool valid = true; // assume true for now
    
-   printf("opcode 0x%04x\n", opcode);
+   //printf("opcode 0x%04x\n", opcode);
    
    switch(opcode&0xF000)
    {
       //****************//
       case 0x0000:
       {
-         switch(opcode&0x00F0)
+         switch(opcode&0x00FF)
          {
-            case 0x00E0:
-            {
-               switch(opcode&0x00FF)
-               {
-                  // 00E0    Clears the screen.
-                  case 0x00E0:
-                  {
-                     if(emulate)
-                     {
-                        for(i=0; i<SCREEN_HEIGHT*SCREEN_WIDTH; i++)
-                           screen[i]=0;
-                     }
-                     if(decode)
-                     {
-                        printf("cls\n");
-                     }
-                  }
-                  break;
-                   
-                  // 00EE   Returns from a subroutine.
-                  case 0x00EE:
-                  {
-                     if(emulate)
-                     {
-                        sp--;
-                        pc = stack[sp];
-                     }
-                     if(decode)
-                     {
-                        printf("rtn\n");
-                     }
-                  }
-                  break;
-                     
-                  default:
-                     printf("0x%04X : bad opcode\n", opcode);
-                     valid = false;
-                     break;
-               }
-               pc += 2; // either commands will increment the pc
-            }
-            break;
-               
-            default: // assume 0NNN    Calls RCA 1802 program at address NNN.
+            case 0x00E0: // 00E0    Clears the screen.
             {
                if(emulate)
                {
-                  pc = opcode&0x0FFF;
+                  for(i=0; i<SCREEN_HEIGHT*SCREEN_WIDTH; i++)
+                     screen[i]=0;
                }
                if(decode)
                {
-                  printf("call 0x%x\n", opcode&0x0FFF);
+                  printf("cls\n");
                }
             }
             break;
+
+            case 0x00EE: // 00EE   Returns from a subroutine.
+            {
+               if(emulate)
+               {
+                  sp--;
+                  pc = stack[sp];
+               }
+               if(decode)
+               {
+                  printf("rtn\n");
+               }
+            }
+            break;
+               
+            default:
+               printf("0x%04X : bad opcode\n", opcode);
+               valid = false;
+               break;
          }
+         pc += 2; // either commands will increment the pc
       }
       break;
 
@@ -441,7 +380,7 @@ bool Machine::decode(uint16_t opcode,
          }
          if(decode)
          {
-            printf("add V%i,0x%x\n", opcode&0x00ff, (opcode>>8)&0x000f);
+            printf("add V%i,0x%x\n", (opcode>>8)&0x000f, opcode&0x00ff);
          }
       }
       break;
@@ -553,18 +492,23 @@ bool Machine::decode(uint16_t opcode,
             }
             break;
                
-            /*case 0x0007: // 8XY7    Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
+            case 0x0007: // 8XY7    Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
             {
                if(emulate)
                {
+                  if(v[(opcode>>4)&0x000F] > (0xFF - v[(opcode&0x0F00)]))
+                     v[0xF] = 1; // set carry
+                  else
+                     v[0xF] = 0;
+                  v[(opcode>>8)&0x000F] = v[(opcode>>4)&0x000F] - v[(opcode>>8)&0x000F];
                }
                if(decode)
                {
-                  printf("rsb V%i,V%i\n", opcode>>, y);
+                  printf("rsb V%i,V%i\n", (opcode>>8)&0x000F, (opcode>>4)&0x000F);
                }
                
             }
-            break;*/
+            break;
 
             case 0x000E: // 8XYE    Shifts VX left by one. VF is set to the value of the most significant bit of VX before the shift.
             {
@@ -653,19 +597,22 @@ bool Machine::decode(uint16_t opcode,
       case 0xD000:   // DXYN    Sprites stored in memory at location in index register (I), maximum 8bits wide. 
       {              //         Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 
                      //         otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels)
-         uint8_t x = v[(opcode & 0x0F00) >> 8];
-         uint8_t y = v[(opcode & 0x00F0) >> 4];
+         uint8_t x = v[(opcode>>8)&0x000F];
+         uint8_t y = v[(opcode>>4)&0x000F];
          uint8_t n = opcode & 0x000F;
          if(emulate)
          {
+            //printf("x=%x y=%x n=%x\n", x, y, n);
             uint8_t pixel;
 
             v[0xF] = 0;
             for (int yline = 0; yline < n; yline++)
             {
+               //printf("yline %i\n", yline);
                pixel = memory[i + yline];
                for(int xline = 0; xline < 8; xline++)
                {
+                  //printf("xline %i\n", yline);
                   if((pixel & (0x80 >> xline)) != 0)
                   {
                      if(screen[(x + xline + ((y + yline) * 64))] == 1)
@@ -710,7 +657,6 @@ bool Machine::decode(uint16_t opcode,
                {
                   if(keys[v[(opcode>>8)&0xF]] != 1)
                      pc+=2;
-                  //keys[v[(opcode>>8)&0xF]] = 0;
                }
                if(decode)
                {

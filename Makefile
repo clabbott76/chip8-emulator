@@ -1,9 +1,9 @@
 AR=ar
 ARFLAGS=rcs
 CC=gcc
-CFLAGS=-Wall -fpermissive -Wwrite-strings
+CFLAGS=-g -Wall -fpermissive -Wwrite-strings
 CPP=g++
-CPPFLAGS=-Wall -fpermissive -Wwrite-strings
+CPPFLAGS=-g -Wall -fpermissive -Wwrite-strings
 LDFLAGS=-lX11
 
 # source files
