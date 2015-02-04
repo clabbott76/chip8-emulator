@@ -46,7 +46,12 @@ public:
                 int     length);
    
    /**
+    * decodes an instruction. depending on flags will either decode to readable
+    * string or emulate the instruction.
     *
+    * @param[in] opcode:  The instruction
+    * @param[in] emulate: Flag so instruction is emulated
+    * @param[in] decode:  Flag so instruction is decoded
     */
    bool decode(uint16_t opcode,
                bool emulate,
@@ -58,7 +63,7 @@ private:
    
    // registers (16 general) (1 address aka index)
    uint8_t v[GENERAL_REGS];
-   uint16_t i;
+   uint16_t I;
    
    // fixed stack size, allows call depth of 16
    uint16_t stack[STACK_SIZE];

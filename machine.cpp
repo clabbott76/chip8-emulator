@@ -26,16 +26,16 @@ uint8_t chip8_fontset[80] =
 };
 
 Machine::Machine() :
-   i(0),
+   I(0),
    drawFlag(false),
    pc(0),
    sp(0),
    kill(false)
 {
    // init memories
-   memset(memory, MEMORY_SIZE, sizeof(uint8_t));
-   memset(v, GENERAL_REGS, sizeof(uint8_t));
-   memset(stack, STACK_SIZE, sizeof(uint16_t));
+   memset(memory, 0, MEMORY_SIZE*sizeof(uint8_t));
+   memset(v, 0, GENERAL_REGS*sizeof(uint8_t));
+   memset(stack, 0, STACK_SIZE*sizeof(uint16_t));
    
    // init timers
    delayTimer=0;
@@ -44,7 +44,6 @@ Machine::Machine() :
    // init fonts
    for(int i=0; i<80; i++)
       memory[i] = chip8_fontset[i];
-   //memcpy(memory, chip8_fontset, 80*sizeof(uint8_t));
    
    // init graphics
    for(int i=0; i<SCREEN_WIDTH*SCREEN_HEIGHT; i++)
@@ -77,6 +76,9 @@ Machine::Machine() :
    XSelectInput(d, window, ExposureMask | KeyPressMask);
    XMapWindow(d, window);
    XFlush(d);
+
+   // initialize random seed
+   srand(time(NULL));
 }
 
 Machine::~Machine()
@@ -99,13 +101,13 @@ void Machine::disassemble(uint8_t* program, int length)
       
       if( !decode(instr, false, true) )
       {
-         printf("unknown/bad opcode\n");
+         //printf("unknown/bad opcode\n");
          ++badcodes;
       }
    }
    
    printf("\ntotal instructions %i\n", length/2);
-   printf("found %i bad instructions\n", badcodes);
+   printf("found %i unknown/bad instructions\n", badcodes);
 }
 
 void Machine::execute(uint8_t* program, int length)
@@ -123,6 +125,12 @@ void Machine::execute(uint8_t* program, int length)
    
    while((!kill) && ((pc+1)<MEMORY_SIZE) && (pc != 0))
    {
+      // wait for user input
+      //fgetc(stdin);
+      //for(int b=0; b<16; b++) printf("V[%i]=x%02X ", b, v[b]);
+      //printf("\n");
+      //printf("I=0x%x\n", I);
+
       // *** fetch ***
       uint16_t opcode = (memory[pc]<<8) | memory[pc+1];
       
@@ -245,7 +253,7 @@ bool Machine::decode(uint16_t opcode,
             {
                if(emulate)
                {
-                  for(i=0; i<SCREEN_HEIGHT*SCREEN_WIDTH; i++)
+                  for(int i=0; i<SCREEN_HEIGHT*SCREEN_WIDTH; i++)
                      screen[i]=0;
                }
                if(decode)
@@ -270,7 +278,7 @@ bool Machine::decode(uint16_t opcode,
             break;
                
             default:
-               printf("0x%04X : bad opcode\n", opcode);
+               printf("unknown opcode\n");
                valid = false;
                break;
          }
@@ -525,7 +533,7 @@ bool Machine::decode(uint16_t opcode,
             break;
                
             default:
-               printf("0x%04X : bad opcode\n", opcode);
+               printf("unknown opcode\n");
                valid = false;
                break;
          }
@@ -554,7 +562,7 @@ bool Machine::decode(uint16_t opcode,
       {
          if(emulate)
          {
-            i = opcode&0x0fff;
+            I = opcode&0x0fff;
             pc+=2;
          }
          if(decode)
@@ -583,7 +591,7 @@ bool Machine::decode(uint16_t opcode,
       {
          if(emulate)
          {
-            v[(opcode>>8)&0x000f] = rand()&(opcode&0x00ff);
+            v[(opcode>>8)&0x000f] = (rand()%255)&(opcode&0x00ff);
             pc+=2;
          }
          if(decode)
@@ -599,7 +607,7 @@ bool Machine::decode(uint16_t opcode,
                      //         otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels)
          uint8_t x = v[(opcode>>8)&0x000F];
          uint8_t y = v[(opcode>>4)&0x000F];
-         uint8_t n = opcode & 0x000F;
+         uint8_t n = opcode&0x000F;
          if(emulate)
          {
             //printf("x=%x y=%x n=%x\n", x, y, n);
@@ -609,14 +617,17 @@ bool Machine::decode(uint16_t opcode,
             for (int yline = 0; yline < n; yline++)
             {
                //printf("yline %i\n", yline);
-               pixel = memory[i + yline];
+               pixel = memory[I + yline];
                for(int xline = 0; xline < 8; xline++)
                {
                   //printf("xline %i\n", yline);
                   if((pixel & (0x80 >> xline)) != 0)
                   {
                      if(screen[(x + xline + ((y + yline) * 64))] == 1)
-                        v[0xF] = 1;                                 
+                     {
+                        //printf("we struck gold\n");
+                        v[0xF] = 1;
+                     }
                      screen[x + xline + ((y + yline) * 64)] ^= 1;
                   }
                }
@@ -626,7 +637,7 @@ bool Machine::decode(uint16_t opcode,
          }
          if(decode)
          {
-            printf("sprite %i,%i,%i\n", x, y, n);
+            printf("sprite V%i,V%i,%i\n", (opcode>>8)&0x000F, (opcode>>4)&0x000F, opcode&0x000F);
          }
       }
       break;
@@ -642,7 +653,6 @@ bool Machine::decode(uint16_t opcode,
                {
                   if(keys[v[(opcode>>8)&0xF]] == 1)
                      pc+=2;
-                  //keys[v[(opcode>>8)&0xF]] = 0;
                }
                if(decode)
                {
@@ -666,7 +676,7 @@ bool Machine::decode(uint16_t opcode,
             break;
 
             default:
-               printf("0x%04X : bad opcode\n", opcode);
+               printf("unknown opcode\n");
                valid = false;
                break;
          }
@@ -745,7 +755,7 @@ bool Machine::decode(uint16_t opcode,
             {
                if(emulate)
                {
-                  i += v[(opcode>>8)&0x000F];
+                  I += v[(opcode>>8)&0x000F];
                }
                if(decode)
                {
@@ -758,11 +768,11 @@ bool Machine::decode(uint16_t opcode,
             {
                if(emulate)
                {
-                  i = ((opcode>>8)&0xF) * 5;
+                  I = v[(opcode>>8)&0xF] * 5;
                }
                if(decode)
                {
-                  printf("font V%i\n", (opcode>>8)&0x000F);
+                  printf("font I,V%i\n", (opcode>>8)&0x000F);
                }
             }
             break;
@@ -772,9 +782,9 @@ bool Machine::decode(uint16_t opcode,
                          //         of VX, place the hundreds digit in memory at location in I, the tens digit at location I+1, and the ones digit at location I+2.)
                if(emulate)
                {
-                  memory[i+2] =  v[(opcode>>8)&0xF] % 10; // least significant
-                  memory[i+1] = (v[(opcode>>8)&0xF] / 10) % 10;
-                  memory[i]   =  v[(opcode>>8)&0xF] / 100;
+                  memory[I+2] =  v[(opcode>>8)&0xF] % 10; // least significant
+                  memory[I+1] = (v[(opcode>>8)&0xF] / 10) % 10;
+                  memory[I]   =  v[(opcode>>8)&0xF] / 100;
                }
                if(decode)
                {
@@ -787,8 +797,8 @@ bool Machine::decode(uint16_t opcode,
             {
                if(emulate)
                {
-                  for(int indx=0; indx<((opcode>>8)&0x000F); indx++)
-                     memory[i+indx] = v[indx];
+                  for(int indx=0; indx<=((opcode>>8)&0x000F); indx++)
+                     memory[I+indx] = v[indx];
                }
                if(decode)
                {
@@ -801,8 +811,8 @@ bool Machine::decode(uint16_t opcode,
             {
                if(emulate)
                {
-                  for(int indx=0; indx<((opcode>>8)&0x000F); indx++)
-                     v[indx] = memory[i+indx];
+                  for(int indx=0; indx<=((opcode>>8)&0x000F); indx++)
+                     v[indx] = memory[I+indx];
                }
                if(decode)
                {
@@ -812,7 +822,7 @@ bool Machine::decode(uint16_t opcode,
             break;
 
             default:
-               printf("0x%04X : bad opcode\n", opcode);
+               printf("unknown opcode\n");
                valid = false;
                break;
          }
@@ -821,7 +831,7 @@ bool Machine::decode(uint16_t opcode,
       break;
 
       default:
-         printf("0x%04X : bad opcode\n", opcode);
+         printf("unknown opcode\n");
          if(emulate)
          {
             pc+=2;
