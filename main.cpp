@@ -2,7 +2,6 @@
 #include <stdint.h> //uint8_t
 #include <stdlib.h> //malloc
 #include <string.h>
-#include <X11/Xlib.h>
 #include "machine.h"
 
 void printHelp(char* app)

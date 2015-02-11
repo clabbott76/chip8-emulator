@@ -1,10 +1,15 @@
+#uncomment to build with SDL
+GFXLIB=BUILD_SDL
+# uncomment to build with X11
+#GFXLIB=BUILD_X11
+
 AR=ar
 ARFLAGS=rcs
 CC=gcc
-CFLAGS=-g -Wall -fpermissive -Wwrite-strings
+CFLAGS=-g -Wall -fpermissive -Wwrite-strings -D$(GFXLIB)
 CPP=g++
-CPPFLAGS=-g -Wall -fpermissive -Wwrite-strings
-LDFLAGS=-lX11
+CPPFLAGS=-g -Wall -fpermissive -Wwrite-strings -D$(GFXLIB)
+LDFLAGS=-lX11 -lSDL
 
 # source files
 SOURCES=main.cpp machine.cpp

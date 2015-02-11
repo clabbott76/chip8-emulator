@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <X11/Xlib.h>
+#include "SDL/SDL.h"
 
 /** 
  * Hardware specs were taken from :
@@ -58,6 +59,12 @@ public:
                bool decode);
    
 private:
+   void updateTimers();
+   void initGraphics();
+   void drawGraphics();
+   void cleanupGraphics();
+   void pollInputs();
+   
    // memory
    uint8_t memory[MEMORY_SIZE];
    
@@ -68,10 +75,10 @@ private:
    // fixed stack size, allows call depth of 16
    uint16_t stack[STACK_SIZE];
    
-   //
-   uint8_t screen[SCREEN_WIDTH*SCREEN_HEIGHT]; //[width] x [height]
+   // screen buffer
+   uint8_t screen[SCREEN_WIDTH*SCREEN_HEIGHT];
    
-   //
+   // flag that indicates we need to draw the screen
    bool drawFlag;
    
    // keys
@@ -86,14 +93,22 @@ private:
    // flag used to kill the execute loop
    bool kill;
    
+   // timer counters
    uint8_t delayTimer;
    uint8_t soundTimer;
-   
+
+#ifdef BUILD_X11
    // X11 window stuff
    Display *d;
    Window window;
    XEvent e;
    int s;
+#endif
+
+#ifdef BUILD_SDL
+   SDL_Surface* screenSurface;
+   SDL_Surface* backbuff;
+#endif
 };
 
 #endif //MACHINE_H

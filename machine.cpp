@@ -52,30 +52,9 @@ Machine::Machine() :
    // init keys
    for(int i=0; i<16; i++)
       keys[i]=0;
-
-   // setup display borrowed from 
-   // http://rosettacode.org/wiki/Window_creation/X11
-   d = XOpenDisplay(NULL);
-   if (d == NULL)
-   {
-      fprintf(stderr, "Cannot open display\n");
-      exit(1);
-   }
    
-   s = DefaultScreen(d);
-   window = XCreateSimpleWindow(d,                 // display
-                                RootWindow(d, s),  // parent
-                                0,                 // x
-                                0,                 // y
-                                SCREEN_WIDTH*10,   // width
-                                SCREEN_HEIGHT*10,  // height
-                                1,                 // border width
-                                BlackPixel(d, s),  // border
-                                WhitePixel(d, s)); // background
-   
-   XSelectInput(d, window, ExposureMask | KeyPressMask);
-   XMapWindow(d, window);
-   XFlush(d);
+   // get the graphics started
+   initGraphics();
 
    // initialize random seed
    srand(time(NULL));
@@ -111,17 +90,13 @@ void Machine::disassemble(uint8_t* program, int length)
 }
 
 void Machine::execute(uint8_t* program, int length)
-{
+{   
    // set program counter / stack pointer
    pc = START_ADDRESS;
    sp = 0;
    
    // copy the program into memory
    memcpy(&(memory[pc]), program, length);
-
-   // timer for 60Hz timers
-   clock_t wait_till_end;
-   wait_till_end = clock() + (0.016666667 * CLOCKS_PER_SEC );
    
    while((!kill) && ((pc+1)<MEMORY_SIZE) && (pc != 0))
    {
@@ -131,107 +106,31 @@ void Machine::execute(uint8_t* program, int length)
       //printf("\n");
       //printf("I=0x%x\n", I);
 
+      // sleep to slow down
+      usleep(500);
+
       // *** fetch ***
       uint16_t opcode = (memory[pc]<<8) | memory[pc+1];
       
       // *** decode ***
-      //printf("0x%X : 0x%X...\n", pc, opcode);
       decode(opcode, true, false);
       
-      // the timers are only updated at 60Hz rate. (16.6 ms period)
-      if (clock() >= wait_till_end)
-      {
-         // *** update delay timer ***
-         if(delayTimer > 0)
-            --delayTimer;
-         
-         // *** update sound timer ***
-         if(soundTimer > 0)
-            --soundTimer;
-         
-         wait_till_end = clock() + (0.016666667 * CLOCKS_PER_SEC );
-      }
+      // *** update timers ***
+      updateTimers();
       
       // *** update screen ***
       if(drawFlag)
       {
-         XEvent e;
-         memset(&e, 0, sizeof(e));
-         e.type = Expose;
-         e.xexpose.window = window;
-         XSendEvent(d,window,false,ExposureMask,&e);
-         XFlush(d);
+         drawGraphics();
+         drawFlag = false;
       }
 
-      while(XPending(d))
-      {
-         uint8_t keystate = 0;
-         
-         XNextEvent(d, &e);
-         if (e.type == Expose) // need to redraw
-         {
-            for(int x=0; x<SCREEN_WIDTH; x++)
-               for(int y=0; y<SCREEN_HEIGHT; y++)
-                  if(screen[(y*SCREEN_WIDTH)+x] == 1)
-                     XFillRectangle(d,               // display
-                                    window,          // window
-                                    DefaultGC(d, s), // GC ???
-                                    x*10,            // x
-                                    y*10,            // y
-                                    10,              // width
-                                    10);             // height
-                  else
-                     XClearArea(d,      // display
-                                window, // window
-                                x*10,   // x
-                                y*10,   // y
-                                10,     // width
-                                10,     // height
-                                false); //
-            XFlush(d);
-            drawFlag = false;
-         }
-         else if(e.type == KeyPress)
-            keystate = 1;
-         else if (e.type == KeyRelease)
-            keystate = 0;
-         
-        //printf("KeyPress: keycode %u state %u\n", e.xkey.keycode, e.xkey.state);
-        switch(e.xkey.keycode)
-        {
-           case 10: //"1"
-           case 11: //"2"
-           case 12: //"3"
-           case 13: //"4"
-              keys[e.xkey.keycode-10] = keystate;
-              break;
-           case 24: //"q"
-           case 25: //"w"
-           case 26: //"e"
-           case 27: //"r"
-              keys[e.xkey.keycode-20] = keystate;
-              break;
-           case 38: //"a"
-           case 39: //"s"
-           case 40: //"d"
-           case 41: //"f"
-              keys[e.xkey.keycode-30] = keystate;
-              break;
-           case 52: //"z"
-           case 53: //"x"
-           case 54: //"c"
-           case 55: //"v"
-              keys[e.xkey.keycode-40] = keystate;
-              break;
-           case 9: //"esc"
-              kill=true;
-              break;
-        }
-      } // while(pending)
-    } // while
+      // *** process inputs ***
+      pollInputs();
+   } // while
    
-   // cleanup X11
-   XCloseDisplay(d);
+   // let's cleanup
+   cleanupGraphics();
 }
 
 bool Machine::decode(uint16_t opcode,
@@ -254,7 +153,10 @@ bool Machine::decode(uint16_t opcode,
                if(emulate)
                {
                   for(int i=0; i<SCREEN_HEIGHT*SCREEN_WIDTH; i++)
+                  {
                      screen[i]=0;
+                     drawFlag = true;
+                  }
                }
                if(decode)
                {
@@ -610,22 +512,18 @@ bool Machine::decode(uint16_t opcode,
          uint8_t n = opcode&0x000F;
          if(emulate)
          {
-            //printf("x=%x y=%x n=%x\n", x, y, n);
             uint8_t pixel;
 
             v[0xF] = 0;
             for (int yline = 0; yline < n; yline++)
             {
-               //printf("yline %i\n", yline);
                pixel = memory[I + yline];
                for(int xline = 0; xline < 8; xline++)
                {
-                  //printf("xline %i\n", yline);
                   if((pixel & (0x80 >> xline)) != 0)
                   {
                      if(screen[(x + xline + ((y + yline) * 64))] == 1)
                      {
-                        //printf("we struck gold\n");
                         v[0xF] = 1;
                      }
                      screen[x + xline + ((y + yline) * 64)] ^= 1;
@@ -651,7 +549,7 @@ bool Machine::decode(uint16_t opcode,
             {
                if(emulate)
                {
-                  if(keys[v[(opcode>>8)&0xF]] == 1)
+                  if(keys[v[(opcode>>8)&0xF]] > 0)
                      pc+=2;
                }
                if(decode)
@@ -665,7 +563,7 @@ bool Machine::decode(uint16_t opcode,
             {
                if(emulate)
                {
-                  if(keys[v[(opcode>>8)&0xF]] != 1)
+                  if(keys[v[(opcode>>8)&0xF]] == 0)
                      pc+=2;
                }
                if(decode)
@@ -709,7 +607,7 @@ bool Machine::decode(uint16_t opcode,
                   int waitKey=0;
                   for(waitKey=0; waitKey<16; waitKey++)
                   {
-                     if(keys[waitKey] == 1)
+                     if(keys[waitKey] > 0)
                      {
                         v[(opcode>>8)&0xF] = waitKey;
                         break;
@@ -842,4 +740,257 @@ bool Machine::decode(uint16_t opcode,
    } // switch
       
    return valid;
+}
+
+void Machine::updateTimers()
+{
+   static int c = 0;
+
+   // the timers are only updated every 25 instructions. This seems to look ok
+   if(++c == 25)
+   {
+      // *** update delay timer ***
+      if(delayTimer > 0)
+         --delayTimer;
+
+      // *** update sound timer ***
+      if(soundTimer > 0)
+         --soundTimer;
+
+      c = 0;
+   }
+}
+
+void Machine::initGraphics()
+{
+#ifdef BUILD_X11
+   // setup display borrowed from
+   // http://rosettacode.org/wiki/Window_creation/X11
+   d = XOpenDisplay(NULL);
+   if (d == NULL)
+   {
+      fprintf(stderr, "Cannot open display\n");
+      exit(1);
+   }
+
+   s = DefaultScreen(d);
+   window = XCreateSimpleWindow(d,                 // display
+                                RootWindow(d, s),  // parent
+                                0,                 // x
+                                0,                 // y
+                                SCREEN_WIDTH*10,   // width
+                                SCREEN_HEIGHT*10,  // height
+                                1,                 // border width
+                                BlackPixel(d, s),  // border
+                                WhitePixel(d, s)); // background
+
+   XSelectInput(d, window, ExposureMask | KeyPressMask);
+   XMapWindow(d, window);
+   XFlush(d);
+#endif
+
+#ifdef BUILD_SDL
+
+   //Start SDL
+   SDL_Init( SDL_INIT_EVERYTHING );
+
+   //Set up screen
+   backbuff = NULL;
+   screenSurface = NULL;
+   screenSurface = SDL_SetVideoMode( SCREEN_WIDTH*10, SCREEN_HEIGHT*10, 32, SDL_SWSURFACE );
+#endif
+}
+
+void Machine::drawGraphics()
+{
+#ifdef BUILD_X11
+   for(int x=0; x<SCREEN_WIDTH; x++)
+   {
+      for(int y=0; y<SCREEN_HEIGHT; y++)
+      {
+         if(screen[(y*SCREEN_WIDTH)+x] == 1)
+            XFillRectangle(d,               // display
+                           window,          // window
+                           DefaultGC(d, s), // GC ???
+                           x*10,            // x
+                           y*10,            // y
+                           10,              // width
+                           10);             // height
+         else
+            XClearArea(d,      // display
+                       window, // window
+                       x*10,   // x
+                       y*10,   // y
+                       10,     // width
+                       10,     // height
+                       false); //
+      }
+   }
+   XFlush(d);
+#endif
+
+#ifdef BUILD_SDL
+      for(int x=0; x<SCREEN_WIDTH; x++)
+      {
+         for(int y=0; y<SCREEN_HEIGHT; y++)
+         {
+            SDL_Rect rect;
+            rect.x = x*10;
+            rect.y = y*10;
+            rect.w = 10;
+            rect.h = 10;
+            if(screen[(y*SCREEN_WIDTH)+x] == 1)
+               SDL_FillRect(screenSurface, &rect, SDL_MapRGB(screenSurface->format, 255, 255, 255));
+            else
+               SDL_FillRect(screenSurface, &rect, SDL_MapRGB(screenSurface->format, 0, 0, 0));
+         }
+      }
+      SDL_Flip(screenSurface);
+#endif
+}
+
+void Machine::cleanupGraphics()
+{
+#ifdef BUILD_X11
+   // cleanup X11
+   XCloseDisplay(d);
+#endif
+
+#ifdef BUILD_SDL
+   //Quit SDL
+   SDL_Quit();
+#endif
+}
+
+void Machine::pollInputs()
+{
+#ifdef BUILD_X11
+   for(int i=0; i<16; i++)
+   {
+      if(keys[i] > 0)
+         keys[i]-=1;
+   }
+   while(XEventsQueued(d,QueuedAlready))
+   //while(XPending(d))
+   {
+      uint8_t keystate = 0;
+      XNextEvent(d, &e);
+      if(e.type == KeyPress)
+         keystate = 100;
+      else if (e.type == KeyRelease)
+         keystate = 0;
+
+     //printf("KeyPress: keycode %u state %u\n", e.xkey.keycode, e.xkey.state);
+     switch(e.xkey.keycode)
+     {
+        case 10: //"1"
+        case 11: //"2"
+        case 12: //"3"
+        case 13: //"4"
+           keys[e.xkey.keycode-10] = keystate;
+           break;
+        case 24: //"q"
+        case 25: //"w"
+        case 26: //"e"
+        case 27: //"r"
+           keys[e.xkey.keycode-20] = keystate;
+           break;
+        case 38: //"a"
+        case 39: //"s"
+        case 40: //"d"
+        case 41: //"f"
+           keys[e.xkey.keycode-30] = keystate;
+           break;
+        case 52: //"z"
+        case 53: //"x"
+        case 54: //"c"
+        case 55: //"v"
+           keys[e.xkey.keycode-40] = keystate;
+           break;
+        case 9: //"esc"
+           kill=true;
+           break;
+     }
+   } // while(pending)
+#endif
+
+#ifdef BUILD_SDL
+   //Handle events on queue
+   SDL_Event e;
+   while( SDL_PollEvent( &e ) != 0 )
+   {
+      //User requests quit
+      if( e.type == SDL_QUIT )
+      {
+         kill = true;
+      }
+      //User presses a key
+      else if( (e.type == SDL_KEYDOWN) || (e.type == SDL_KEYUP) )
+      {
+         uint8_t action = 0; // key up
+         if(e.type == SDL_KEYDOWN)
+         {
+            action = 1;
+         }
+
+         //Select surfaces based on key press
+         switch( e.key.keysym.sym )
+         {
+         case SDLK_1:
+            keys[0] = action;
+            break;
+         case SDLK_2:
+            keys[1] = action;;
+            break;
+         case SDLK_3:
+            keys[2] = action;
+            break;
+         case SDLK_4:
+            keys[3] = action;
+            break;
+         case SDLK_q:
+            keys[4] = action;
+            break;
+         case SDLK_w:
+            keys[5] = action;
+            break;
+         case SDLK_e:
+            keys[6] = action;
+            break;
+         case SDLK_r:
+            keys[7] = action;
+            break;
+         case SDLK_a:
+            keys[8] = action;
+            break;
+         case SDLK_s:
+            keys[9] = action;
+            break;
+         case SDLK_d:
+            keys[10] = action;
+            break;
+         case SDLK_f:
+            keys[11] = action;
+            break;
+         case SDLK_z:
+            keys[12] = action;
+            break;
+         case SDLK_x:
+            keys[13] = action;
+            break;
+         case SDLK_c:
+            keys[14] = action;
+            break;
+         case SDLK_v:
+            keys[15] = action;
+            break;
+         case SDLK_ESCAPE:
+            kill = true;
+            break;
+         default:
+            break;
+         }
+      }
+   }
+#endif
 }
